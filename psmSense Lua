@@ -1,0 +1,782 @@
+-- psmSense
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+
+pcall(function()
+    if getgenv().psm_ui then getgenv().psm_ui:Destroy() end
+end)
+
+local parent = CoreGui
+pcall(function() if gethui then parent = gethui() end end)
+
+local Client = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local baseFOV = 70
+local DrawingLib = nil
+pcall(function() DrawingLib = Drawing or getgenv().Drawing end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "psmSense"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = parent
+getgenv().psm_ui = gui
+
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 580, 0, 440)
+main.Position = UDim2.new(0.5, -290, 0.5, -220)
+main.BackgroundColor3 = Color3.fromRGB(8, 8, 10)
+main.BackgroundTransparency = 0.25
+main.BorderSizePixel = 0
+main.Active = true
+main.Draggable = true
+main.ClipsDescendants = true
+main.Parent = gui
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(40, 40, 48)
+mainStroke.Thickness = 1.2
+mainStroke.Transparency = 0.3
+mainStroke.Parent = main
+
+local top = Instance.new("Frame")
+top.Size = UDim2.new(1, 0, 0, 34)
+top.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+top.BackgroundTransparency = 0.2
+top.BorderSizePixel = 0
+top.Parent = main
+Instance.new("UICorner", top).CornerRadius = UDim.new(0, 10)
+
+local topCover = Instance.new("Frame")
+topCover.Size = UDim2.new(1, 0, 0, 12)
+topCover.Position = UDim2.new(0, 0, 1, -12)
+topCover.BackgroundColor3 = Color3.fromRGB(12, 12, 16)
+topCover.BackgroundTransparency = 0.2
+topCover.BorderSizePixel = 0
+topCover.Parent = top
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -16, 1, 0)
+title.Position = UDim2.new(0, 12, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "psmSense"
+title.TextColor3 = Color3.fromRGB(230, 230, 240)
+title.TextSize = 15
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = top
+
+local side = Instance.new("Frame")
+side.Size = UDim2.new(0, 110, 1, -34)
+side.Position = UDim2.new(0, 0, 0, 34)
+side.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+side.BackgroundTransparency = 0.25
+side.BorderSizePixel = 0
+side.Parent = main
+
+local content = Instance.new("ScrollingFrame")
+content.Size = UDim2.new(1, -120, 1, -44)
+content.Position = UDim2.new(0, 115, 0, 40)
+content.BackgroundTransparency = 1
+content.BorderSizePixel = 0
+content.ScrollBarThickness = 3
+content.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 75)
+content.CanvasSize = UDim2.new(0, 0, 0, 0)
+content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+content.Parent = main
+
+Instance.new("UIListLayout", content).Padding = UDim.new(0, 6)
+local pad = Instance.new("UIPadding", content)
+pad.PaddingTop = UDim.new(0, 4)
+pad.PaddingLeft = UDim.new(0, 4)
+pad.PaddingRight = UDim.new(0, 6)
+pad.PaddingBottom = UDim.new(0, 10)
+
+-- Snow
+local snowFolder = Instance.new("Folder")
+snowFolder.Name = "Snow"
+snowFolder.Parent = main
+
+local function createSnowflake()
+    local flake = Instance.new("Frame")
+    flake.Size = UDim2.new(0, math.random(2, 4), 0, math.random(2, 4))
+    flake.Position = UDim2.new(math.random(), 0, -0.05, 0)
+    flake.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    flake.BackgroundTransparency = math.random(35, 65) / 100
+    flake.BorderSizePixel = 0
+    flake.Parent = snowFolder
+    Instance.new("UICorner", flake).CornerRadius = UDim.new(1, 0)
+
+    local speed = math.random(15, 30) / 10
+    local xMove = (math.random() - 0.5) * 0.12
+    local conn
+    conn = RunService.RenderStepped:Connect(function(dt)
+        if not flake.Parent then conn:Disconnect() return end
+        local y = flake.Position.Y.Scale + dt * speed * 0.035
+        local x = flake.Position.X.Scale + dt * xMove
+        if y > 1.05 then flake:Destroy() conn:Disconnect() return end
+        flake.Position = UDim2.new(x, 0, y, 0)
+    end)
+end
+
+task.spawn(function()
+    while main.Parent do
+        if #snowFolder:GetChildren() < 40 then createSnowflake() end
+        task.wait(0.14)
+    end
+end)
+
+local Flags = {
+    ESP_Enabled = false, ESP_Box = false, ESP_Name = false,
+    ESP_Health = false, ESP_Distance = false, ESP_TeamCheck = false,
+    ESP_Rainbow = false,
+    Local_Ring = false, Local_Sparkle = false, Local_Rainbow = false,
+    World_Fullbright = false, World_NoFog = false, World_Stretch = 1,
+    UI_Show = true,
+    Color_H = 0.55, Color_S = 1, Color_V = 1,
+    Rainbow_Speed = 0.3
+}
+
+local dynamicColor = Color3.fromHSV(0.55, 1, 1)
+local rainbowHue = 0
+
+local ToggleBoxes, SliderFills = {}, {}
+local currentBtn = nil
+local ToggleKey = Enum.KeyCode.RightShift
+local UIVisible = true
+local listeningForKey = false
+local ESPObjects = {}
+local Connections = {}
+local running = true
+
+local RingParts = {}
+local SparkleAtt = nil
+
+local function getActiveColor(useRainbowFlag)
+    if useRainbowFlag then
+        return Color3.fromHSV(rainbowHue, 0.9, 1)
+    end
+    return Color3.fromHSV(Flags.Color_H or 0.55, Flags.Color_S or 1, Flags.Color_V or 1)
+end
+
+local function setUIVisible(state)
+    UIVisible = state
+    Flags.UI_Show = state
+    main.Visible = state
+end
+
+local function clear()
+    for _, c in pairs(content:GetChildren()) do
+        if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+    end
+    table.clear(ToggleBoxes)
+    table.clear(SliderFills)
+end
+
+local function addToggle(name, flag, default)
+    Flags[flag] = default
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 28)
+    row.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    row.BackgroundTransparency = 0.25
+    row.BorderSizePixel = 0
+    row.Parent = content
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -52, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(210, 210, 220)
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+
+    local box = Instance.new("Frame")
+    box.Size = UDim2.new(0, 36, 0, 18)
+    box.Position = UDim2.new(1, -42, 0.5, -9)
+    box.BackgroundColor3 = default and Color3.fromRGB(100, 180, 90) or Color3.fromRGB(40, 40, 50)
+    box.BorderSizePixel = 0
+    box.Parent = row
+    Instance.new("UICorner", box).CornerRadius = UDim.new(1, 0)
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = default and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
+    knob.BackgroundColor3 = Color3.fromRGB(240, 240, 245)
+    knob.BorderSizePixel = 0
+    knob.Parent = box
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    if default then ToggleBoxes[flag] = box end
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.Parent = row
+    btn.MouseButton1Click:Connect(function()
+        Flags[flag] = not Flags[flag]
+        if Flags[flag] then
+            ToggleBoxes[flag] = box
+            box.BackgroundColor3 = Color3.fromRGB(100, 180, 90)
+            knob.Position = UDim2.new(1, -16, 0.5, -7)
+            if flag == "UI_Show" then setUIVisible(true) end
+        else
+            ToggleBoxes[flag] = nil
+            box.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            knob.Position = UDim2.new(0, 2, 0.5, -7)
+            if flag == "UI_Show" then setUIVisible(false) end
+        end
+    end)
+end
+
+local function addSlider(name, flag, default, min, max)
+    Flags[flag] = default
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 46)
+    row.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    row.BackgroundTransparency = 0.25
+    row.BorderSizePixel = 0
+    row.Parent = content
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.65, 0, 0, 16)
+    label.Position = UDim2.new(0, 10, 0, 6)
+    label.BackgroundTransparency = 1
+    label.Text = name
+    label.TextColor3 = Color3.fromRGB(210, 210, 220)
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+
+    local val = Instance.new("TextLabel")
+    val.Size = UDim2.new(0.3, 0, 0, 16)
+    val.Position = UDim2.new(0.65, 0, 0, 6)
+    val.BackgroundTransparency = 1
+    val.Text = tostring(default)
+    val.TextColor3 = Color3.fromRGB(150, 150, 165)
+    val.TextSize = 12
+    val.Font = Enum.Font.Gotham
+    val.TextXAlignment = Enum.TextXAlignment.Right
+    val.Parent = row
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1, -20, 0, 5)
+    bar.Position = UDim2.new(0, 10, 0, 30)
+    bar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    bar.BorderSizePixel = 0
+    bar.Parent = row
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(100, 180, 90)
+    fill.BorderSizePixel = 0
+    fill.Parent = bar
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+    table.insert(SliderFills, fill)
+
+    local dragging = false
+    bar.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            main.Draggable = false
+        end
+    end)
+    bar.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+            main.Draggable = true
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local r = math.clamp((i.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+            local v = math.floor((min + (max - min) * r) * 100 + 0.5) / 100
+            Flags[flag] = v
+            fill.Size = UDim2.new(r, 0, 1, 0)
+            val.Text = tostring(v)
+        end
+    end)
+end
+
+local function addLabel(text)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 18)
+    l.BackgroundTransparency = 1
+    l.Text = text
+    l.TextColor3 = Color3.fromRGB(160, 160, 175)
+    l.TextSize = 12
+    l.Font = Enum.Font.GothamMedium
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = content
+end
+
+local function addColorPreview()
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 28)
+    row.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    row.BackgroundTransparency = 0.25
+    row.BorderSizePixel = 0
+    row.Parent = content
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.4, 0, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "Preview"
+    label.TextColor3 = Color3.fromRGB(210, 210, 220)
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+
+    local preview = Instance.new("Frame")
+    preview.Name = "ColorPreview"
+    preview.Size = UDim2.new(0, 80, 0, 18)
+    preview.Position = UDim2.new(1, -90, 0.5, -9)
+    preview.BackgroundColor3 = dynamicColor
+    preview.BorderSizePixel = 0
+    preview.Parent = row
+    Instance.new("UICorner", preview).CornerRadius = UDim.new(0, 4)
+end
+
+local function addKeybind()
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 32)
+    row.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    row.BackgroundTransparency = 0.25
+    row.BorderSizePixel = 0
+    row.Parent = content
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.45, 0, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = "Toggle Key"
+    label.TextColor3 = Color3.fromRGB(210, 210, 220)
+    label.TextSize = 13
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = row
+
+    local box = Instance.new("TextButton")
+    box.Size = UDim2.new(0.45, 0, 0, 22)
+    box.Position = UDim2.new(0.5, 0, 0.5, -11)
+    box.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    box.BorderSizePixel = 0
+    box.Text = "RightShift"
+    box.TextColor3 = Color3.fromRGB(220, 220, 230)
+    box.TextSize = 12
+    box.Font = Enum.Font.Gotham
+    box.Parent = row
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 5)
+
+    box.MouseButton1Click:Connect(function()
+        if listeningForKey then return end
+        listeningForKey = true
+        box.Text = "..."
+        box.TextColor3 = Color3.fromRGB(255, 200, 80)
+        local conn
+        conn = UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                ToggleKey = input.KeyCode
+                box.Text = input.KeyCode.Name
+                box.TextColor3 = Color3.fromRGB(220, 220, 230)
+                listeningForKey = false
+                conn:Disconnect()
+            end
+        end)
+    end)
+end
+
+local function clearLocalEffects()
+    for _, p in pairs(RingParts) do pcall(function() p:Destroy() end) end
+    table.clear(RingParts)
+    if SparkleAtt then pcall(function() SparkleAtt:Destroy() end) SparkleAtt = nil end
+end
+
+local function fullUnload()
+    running = false
+    clearLocalEffects()
+    for _, d in pairs(ESPObjects) do
+        for _, v in pairs(d) do
+            if v and v.Remove then pcall(function() v:Remove() end) end
+        end
+    end
+    table.clear(ESPObjects)
+    Camera.FieldOfView = baseFOV
+    pcall(function()
+        Lighting.Brightness = 1
+        Lighting.GlobalShadows = true
+        Lighting.FogEnd = 100000
+    end)
+    for _, c in pairs(Connections) do pcall(function() c:Disconnect() end) end
+    if getgenv().psm_ui then getgenv().psm_ui:Destroy() getgenv().psm_ui = nil end
+end
+
+local function addButton(name, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    btn.BackgroundTransparency = 0.15
+    btn.BorderSizePixel = 0
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(230, 230, 240)
+    btn.TextSize = 13
+    btn.Font = Enum.Font.GothamMedium
+    btn.Parent = content
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    btn.MouseButton1Click:Connect(callback)
+end
+
+local function loadPage(name)
+    clear()
+    if name == "ESP" then
+        addLabel("ESP")
+        addToggle("Enabled", "ESP_Enabled", false)
+        addToggle("Box", "ESP_Box", false)
+        addToggle("Name", "ESP_Name", false)
+        addToggle("Health Bar", "ESP_Health", false)
+        addToggle("Distance", "ESP_Distance", false)
+        addToggle("Team Check", "ESP_TeamCheck", false)
+        addToggle("Rainbow Color", "ESP_Rainbow", false)
+        addLabel("Manual Color (HSV)")
+        addSlider("Hue", "Color_H", Flags.Color_H or 0.55, 0, 1)
+        addSlider("Saturation", "Color_S", Flags.Color_S or 1, 0, 1)
+        addSlider("Value", "Color_V", Flags.Color_V or 1, 0, 1)
+        addSlider("Rainbow Speed", "Rainbow_Speed", Flags.Rainbow_Speed or 0.3, 0.05, 2)
+        addColorPreview()
+    elseif name == "Local" then
+        addLabel("Local Effects")
+        addToggle("Head Ring", "Local_Ring", false)
+        addToggle("Sparkles", "Local_Sparkle", false)
+        addToggle("Rainbow Color", "Local_Rainbow", false)
+        addLabel("Manual Color (HSV)")
+        addSlider("Hue", "Color_H", Flags.Color_H or 0.55, 0, 1)
+        addSlider("Saturation", "Color_S", Flags.Color_S or 1, 0, 1)
+        addSlider("Value", "Color_V", Flags.Color_V or 1, 0, 1)
+        addSlider("Rainbow Speed", "Rainbow_Speed", Flags.Rainbow_Speed or 0.3, 0.05, 2)
+        addColorPreview()
+    elseif name == "World" then
+        addLabel("World")
+        addToggle("Fullbright", "World_Fullbright", false)
+        addToggle("No Fog", "World_NoFog", false)
+        addSlider("Resolution Stretch", "World_Stretch", 1, 0.1, 3)
+    elseif name == "UI Settings" then
+        addLabel("UI Settings")
+        addToggle("Show UI", "UI_Show", true)
+        addKeybind()
+        addButton("Unload", fullUnload)
+    end
+end
+
+local tabs = {"ESP", "Local", "World", "UI Settings"}
+for i, name in ipairs(tabs) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 30)
+    btn.Position = UDim2.new(0, 5, 0, 8 + (i-1)*36)
+    btn.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+    btn.BackgroundTransparency = 0.2
+    btn.BorderSizePixel = 0
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(160, 160, 175)
+    btn.TextSize = 12
+    btn.Font = Enum.Font.Gotham
+    btn.Parent = side
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+
+    btn.MouseButton1Click:Connect(function()
+        if currentBtn then
+            currentBtn.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+            currentBtn.BackgroundTransparency = 0.2
+            currentBtn.TextColor3 = Color3.fromRGB(160, 160, 175)
+        end
+        btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        btn.BackgroundTransparency = 0.1
+        btn.TextColor3 = Color3.fromRGB(240, 240, 250)
+        currentBtn = btn
+        loadPage(name)
+    end)
+
+    if i == 1 then
+        btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        btn.BackgroundTransparency = 0.1
+        btn.TextColor3 = Color3.fromRGB(240, 240, 250)
+        currentBtn = btn
+        loadPage(name)
+    end
+end
+
+table.insert(Connections, UserInputService.InputBegan:Connect(function(input)
+    if listeningForKey then return end
+    if input.KeyCode == ToggleKey then
+        setUIVisible(not UIVisible)
+    end
+end))
+
+-- ========== HEAD RING (hollow - segments) ==========
+local function setupRing(char)
+    for _, p in pairs(RingParts) do pcall(function() p:Destroy() end) end
+    table.clear(RingParts)
+
+    local head = char and char:FindFirstChild("Head")
+    if not head then return end
+
+    local segments = 16
+    local radius = 1.15
+    local folder = Instance.new("Folder")
+    folder.Name = "psmRing"
+    folder.Parent = char
+    table.insert(RingParts, folder)
+
+    for i = 1, segments do
+        local angle = (i / segments) * math.pi * 2
+        local seg = Instance.new("Part")
+        seg.Name = "RingSeg"
+        seg.Size = Vector3.new(0.12, 0.12, 0.35)
+        seg.Color = dynamicColor
+        seg.Material = Enum.Material.Neon
+        seg.Transparency = 0.15
+        seg.CanCollide = false
+        seg.Massless = true
+        seg.Parent = folder
+
+        local weld = Instance.new("Weld")
+        weld.Part0 = head
+        weld.Part1 = seg
+        local x = math.cos(angle) * radius
+        local z = math.sin(angle) * radius
+        weld.C0 = CFrame.new(x, 1.55, z) * CFrame.Angles(0, -angle, 0)
+        weld.Parent = seg
+
+        table.insert(RingParts, seg)
+    end
+end
+
+local function setupSparkle(char)
+    if SparkleAtt then pcall(function() SparkleAtt:Destroy() end) end
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local att = Instance.new("Attachment")
+    att.Parent = root
+    local pe = Instance.new("ParticleEmitter")
+    pe.Texture = "rbxassetid://243660364"
+    pe.Color = ColorSequence.new(dynamicColor)
+    pe.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.12),
+        NumberSequenceKeypoint.new(1, 0)
+    })
+    pe.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.25),
+        NumberSequenceKeypoint.new(1, 1)
+    })
+    pe.Lifetime = NumberRange.new(0.5, 1)
+    pe.Rate = 20
+    pe.Speed = NumberRange.new(1, 2.5)
+    pe.SpreadAngle = Vector2.new(360, 360)
+    pe.LightEmission = 1
+    pe.Parent = att
+    SparkleAtt = att
+end
+
+local function updateLocalEffects()
+    local char = Client.Character
+    if not char then return end
+
+    local col = getActiveColor(Flags.Local_Rainbow)
+
+    if Flags.Local_Ring then
+        if #RingParts == 0 then setupRing(char) end
+        for _, p in pairs(RingParts) do
+            if p:IsA("BasePart") then
+                p.Color = col
+            end
+        end
+    else
+        for _, p in pairs(RingParts) do pcall(function() p:Destroy() end) end
+        table.clear(RingParts)
+    end
+
+    if Flags.Local_Sparkle then
+        if not SparkleAtt or not SparkleAtt.Parent then setupSparkle(char) end
+        if SparkleAtt then
+            local pe = SparkleAtt:FindFirstChildOfClass("ParticleEmitter")
+            if pe then pe.Color = ColorSequence.new(col) end
+        end
+    else
+        if SparkleAtt then pcall(function() SparkleAtt:Destroy() end) SparkleAtt = nil end
+    end
+end
+
+table.insert(Connections, Client.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    clearLocalEffects()
+    updateLocalEffects()
+end))
+
+-- ESP
+local function MakeDraw(class, props)
+    if not DrawingLib then return nil end
+    local ok, d = pcall(function() return DrawingLib.new(class) end)
+    if not ok or not d then return nil end
+    for k, v in pairs(props or {}) do pcall(function() d[k] = v end) end
+    return d
+end
+
+local function CreateESP(plr)
+    if plr == Client or not DrawingLib then return end
+    ESPObjects[plr] = {
+        Box = MakeDraw("Square", {Thickness = 1, Filled = false, Visible = false}),
+        Outline = MakeDraw("Square", {Thickness = 2, Filled = false, Color = Color3.new(0,0,0), Visible = false}),
+        Name = MakeDraw("Text", {Size = 13, Center = true, Outline = true, Visible = false}),
+        Health = MakeDraw("Square", {Filled = true, Visible = false}),
+        HealthOut = MakeDraw("Square", {Thickness = 1, Filled = false, Color = Color3.new(0,0,0), Visible = false}),
+        Dist = MakeDraw("Text", {Size = 12, Center = true, Outline = true, Visible = false}),
+    }
+end
+
+local function RemoveESP(plr)
+    local d = ESPObjects[plr]
+    if not d then return end
+    for _, v in pairs(d) do
+        if v and v.Remove then pcall(function() v:Remove() end) end
+    end
+    ESPObjects[plr] = nil
+end
+
+local function UpdateESP()
+    if not running or not Flags.ESP_Enabled or not DrawingLib then
+        for _, d in pairs(ESPObjects) do
+            for _, v in pairs(d) do if v then v.Visible = false end end
+        end
+        return
+    end
+
+    local col = getActiveColor(Flags.ESP_Rainbow)
+
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr == Client then continue end
+        if not ESPObjects[plr] then CreateESP(plr) end
+        local d = ESPObjects[plr]
+        local char = plr.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local head = char and char:FindFirstChild("Head")
+
+        if not char or not hum or not root or hum.Health <= 0 then
+            for _, v in pairs(d) do if v then v.Visible = false end end
+            continue
+        end
+        if Flags.ESP_TeamCheck and plr.Team and Client.Team and plr.Team == Client.Team then
+            for _, v in pairs(d) do if v then v.Visible = false end end
+            continue
+        end
+
+        local pos, on = Camera:WorldToViewportPoint(root.Position)
+        if not on then
+            for _, v in pairs(d) do if v then v.Visible = false end end
+            continue
+        end
+
+        local headPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+        local footPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+        local sizeY = math.abs(headPos.Y - footPos.Y)
+        local sizeX = sizeY / 1.6
+        local boxPos = Vector2.new(pos.X - sizeX/2, headPos.Y)
+        local dist = (root.Position - Camera.CFrame.Position).Magnitude
+
+        if Flags.ESP_Box and d.Box then
+            d.Box.Visible = true
+            d.Outline.Visible = true
+            d.Box.Color = col
+            d.Box.Size = Vector2.new(sizeX, sizeY)
+            d.Box.Position = boxPos
+            d.Outline.Size = Vector2.new(sizeX, sizeY)
+            d.Outline.Position = boxPos
+        else
+            if d.Box then d.Box.Visible = false end
+            if d.Outline then d.Outline.Visible = false end
+        end
+
+        if Flags.ESP_Name and d.Name then
+            d.Name.Visible = true
+            d.Name.Text = plr.Name
+            d.Name.Color = col
+            d.Name.Position = Vector2.new(pos.X, headPos.Y - 15)
+        elseif d.Name then d.Name.Visible = false end
+
+        if Flags.ESP_Health and d.Health then
+            local h = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+            d.Health.Visible = true
+            d.HealthOut.Visible = true
+            d.Health.Color = Color3.fromRGB(255*(1-h), 255*h, 0)
+            d.Health.Size = Vector2.new(3, sizeY * h)
+            d.Health.Position = Vector2.new(boxPos.X - 6, boxPos.Y + sizeY - sizeY*h)
+            d.HealthOut.Size = Vector2.new(3, sizeY)
+            d.HealthOut.Position = Vector2.new(boxPos.X - 6, boxPos.Y)
+        else
+            if d.Health then d.Health.Visible = false end
+            if d.HealthOut then d.HealthOut.Visible = false end
+        end
+
+        if Flags.ESP_Distance and d.Dist then
+            d.Dist.Visible = true
+            d.Dist.Text = math.floor(dist) .. "m"
+            d.Dist.Color = col
+            d.Dist.Position = Vector2.new(pos.X, footPos.Y + 2)
+        elseif d.Dist then d.Dist.Visible = false end
+    end
+end
+
+table.insert(Connections, Players.PlayerAdded:Connect(function(p) CreateESP(p) end))
+table.insert(Connections, Players.PlayerRemoving:Connect(function(p) RemoveESP(p) end))
+for _, p in pairs(Players:GetPlayers()) do if p ~= Client then CreateESP(p) end end
+
+table.insert(Connections, RunService.RenderStepped:Connect(function(dt)
+    if not running then return end
+
+    -- animated color
+    rainbowHue = (rainbowHue + dt * (Flags.Rainbow_Speed or 0.3)) % 1
+    if Flags.ESP_Rainbow or Flags.Local_Rainbow then
+        dynamicColor = Color3.fromHSV(rainbowHue, 0.9, 1)
+    else
+        dynamicColor = Color3.fromHSV(Flags.Color_H or 0.55, Flags.Color_S or 1, Flags.Color_V or 1)
+    end
+
+    -- update preview if exists
+    for _, c in pairs(content:GetChildren()) do
+        local prev = c:FindFirstChild("ColorPreview")
+        if prev then prev.BackgroundColor3 = dynamicColor end
+    end
+
+    pcall(UpdateESP)
+    pcall(updateLocalEffects)
+
+    local stretch = math.clamp(Flags.World_Stretch or 1, 0.1, 3)
+    Camera.FieldOfView = baseFOV / stretch
+
+    if Flags.World_Fullbright then
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 9e9
+        Lighting.GlobalShadows = false
+    else
+        if Flags.World_NoFog then Lighting.FogEnd = 9e9 end
+    end
+end))
+
+print("[psmSense] hollow ring + hsv color loaded")
