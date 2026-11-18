@@ -1,0 +1,248 @@
+-- Mystery Crosshair (Always On Top + Cross Game)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+-- 기존 정리
+if _G.MysteryCrosshair then
+    pcall(function() _G.MysteryCrosshair:Destroy() end)
+end
+if _G.MysteryCrosshairConnection then
+    pcall(function() _G.MysteryCrosshairConnection:Disconnect() end)
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MysteryCrosshair"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 2147483647
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+_G.MysteryCrosshair = screenGui
+
+local container = Instance.new("Frame")
+container.BackgroundTransparency = 1
+container.Size = UDim2.fromOffset(28, 28)
+container.AnchorPoint = Vector2.new(0.5, 0.5)
+container.ZIndex = 999999
+container.Parent = screenGui
+
+-- 4 lines
+local lines = {
+    Top = Instance.new("Frame"),
+    Bottom = Instance.new("Frame"),
+    Left = Instance.new("Frame"),
+    Right = Instance.new("Frame")
+}
+
+for name, line in pairs(lines) do
+    line.BackgroundColor3 = Color3.new(1, 0, 0)
+    line.BorderSizePixel = 0
+    line.ZIndex = 999999
+    line.Parent = container
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.new(0, 0, 0)
+    stroke.Thickness = 1.0
+    stroke.Parent = line
+end
+
+-- Default position/size
+lines.Top.Size = UDim2.fromOffset(3, -11)
+lines.Top.Position = UDim2.new(0.5, -1.5, 0, 0)
+
+lines.Bottom.Size = UDim2.fromOffset(3, -11)
+lines.Bottom.Position = UDim2.new(0.5, -1.5, 1, 11)
+
+lines.Left.Size = UDim2.fromOffset(-11, 3)
+lines.Left.Position = UDim2.new(0, 0, 0.5, -1.5)
+
+lines.Right.Size = UDim2.fromOffset(-11, 3)
+lines.Right.Position = UDim2.new(1, 11, 0.5, -1.5)
+
+-- Text
+local textLabel = Instance.new("TextLabel")
+textLabel.Text = "Mystery"
+textLabel.Font = Enum.Font.Arcade
+textLabel.TextSize = 16
+textLabel.BackgroundTransparency = 1
+textLabel.Size = UDim2.fromOffset(100, 20)
+textLabel.ZIndex = 999999
+textLabel.TextColor3 = Color3.new(1, 0, 0)
+textLabel.Parent = screenGui
+
+local textStroke = Instance.new("UIStroke")
+textStroke.Color = Color3.new(0, 0, 0)
+textStroke.Thickness = 1.0
+textStroke.Parent = textLabel
+
+-- Variables
+local t = 0
+local currentRotation = 0
+
+local connection = RunService.RenderStepped:Connect(function(dt)
+    if not screenGui or not screenGui.Parent then return end
+
+    t += dt
+
+    -- Mouse position
+    local mousePos = UserInputService:GetMouseLocation()
+    container.Position = UDim2.fromOffset(mousePos.X, mousePos.Y)
+    textLabel.Position = UDim2.fromOffset(mousePos.X - 50, mousePos.Y + 36)
+
+    -- Rotation: 80% ~ 100% 구간에서 부드럽게 느려짐
+    local cycle = (currentRotation % 360) / 360
+
+    local slowAmount = 0
+    if cycle > 0.80 then
+        local progress = (cycle - 0.80) / 0.20
+        slowAmount = math.sin(progress * math.pi)
+    end
+
+    local baseSpeed = 280
+    local minSpeed = 55
+    local speed = baseSpeed - (baseSpeed - minSpeed) * slowAmount
+
+    currentRotation = (currentRotation + dt * speed) % 360
+    container.Rotation = currentRotation
+
+    -- Pulse
+    local raw = math.sin(t * 5.2)
+    local pulse = (raw * 0.5 + 0.5) ^ 1.8
+    local len = -11 - 20 * pulse
+
+    lines.Top.Size = UDim2.fromOffset(3, len)
+    lines.Bottom.Size = UDim2.fromOffset(3, len)
+    lines.Bottom.Position = UDim2.new(0.5, -1.5, 1, -len)
+
+    lines.Left.Size = UDim2.fromOffset(len, 3)
+    lines.Right.Size = UDim2.fromOffset(len, 3)
+    lines.Right.Position = UDim2.new(1, -len, 0.5, -1.5)
+
+    -- Heartbeat color
+    local beat = (math.sin(t * 2.7) * 0.5 + 0.5)
+    beat = beat * beat * (3 - 2 * beat)
+    local color = Color3.new(beat, 0, 0)
+
+    lines.Top.BackgroundColor3 = color
+    lines.Bottom.BackgroundColor3 = color
+    lines.Left.BackgroundColor3 = color
+    lines.Right.BackgroundColor3 = color
+    textLabel.TextColor3 = color
+end)
+
+_G.MysteryCrosshairConnection = connection
+
+-- 다른 게임으로 텔레포트 시 자동 실행
+pcall(function()
+    queue_on_teleport([[
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+
+if _G.MysteryCrosshair then pcall(function() _G.MysteryCrosshair:Destroy() end) end
+if _G.MysteryCrosshairConnection then pcall(function() _G.MysteryCrosshairConnection:Disconnect() end) end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "MysteryCrosshair"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 2147483647
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild("PlayerGui")
+_G.MysteryCrosshair = screenGui
+
+local container = Instance.new("Frame")
+container.BackgroundTransparency = 1
+container.Size = UDim2.fromOffset(28, 28)
+container.AnchorPoint = Vector2.new(0.5, 0.5)
+container.ZIndex = 999999
+container.Parent = screenGui
+
+local lines = {
+    Top = Instance.new("Frame"),
+    Bottom = Instance.new("Frame"),
+    Left = Instance.new("Frame"),
+    Right = Instance.new("Frame")
+}
+
+for _, line in pairs(lines) do
+    line.BackgroundColor3 = Color3.new(1, 0, 0)
+    line.BorderSizePixel = 0
+    line.ZIndex = 999999
+    line.Parent = container
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.new(0, 0, 0)
+    stroke.Thickness = 1.0
+    stroke.Parent = line
+end
+
+lines.Top.Size = UDim2.fromOffset(3, -11)
+lines.Top.Position = UDim2.new(0.5, -1.5, 0, 0)
+lines.Bottom.Size = UDim2.fromOffset(3, -11)
+lines.Bottom.Position = UDim2.new(0.5, -1.5, 1, 11)
+lines.Left.Size = UDim2.fromOffset(-11, 3)
+lines.Left.Position = UDim2.new(0, 0, 0.5, -1.5)
+lines.Right.Size = UDim2.fromOffset(-11, 3)
+lines.Right.Position = UDim2.new(1, 11, 0.5, -1.5)
+
+local textLabel = Instance.new("TextLabel")
+textLabel.Text = "Yokai.win"
+textLabel.Font = Enum.Font.Arcade
+textLabel.TextSize = 16
+textLabel.BackgroundTransparency = 1
+textLabel.Size = UDim2.fromOffset(100, 20)
+textLabel.ZIndex = 999999
+textLabel.TextColor3 = Color3.new(1, 0, 0)
+textLabel.Parent = screenGui
+local textStroke = Instance.new("UIStroke")
+textStroke.Color = Color3.new(0, 0, 0)
+textStroke.Thickness = 1.0
+textStroke.Parent = textLabel
+
+local t = 0
+local currentRotation = 0
+
+local connection = RunService.RenderStepped:Connect(function(dt)
+    if not screenGui or not screenGui.Parent then return end
+    t += dt
+    local mousePos = UserInputService:GetMouseLocation()
+    container.Position = UDim2.fromOffset(mousePos.X, mousePos.Y)
+    textLabel.Position = UDim2.fromOffset(mousePos.X - 50, mousePos.Y + 36)
+    local cycle = (currentRotation % 360) / 360
+    local slowAmount = 0
+    if cycle > 0.80 then
+        local progress = (cycle - 0.80) / 0.20
+        slowAmount = math.sin(progress * math.pi)
+    end
+    local speed = 280 - (280 - 55) * slowAmount
+    currentRotation = (currentRotation + dt * speed) % 360
+    container.Rotation = currentRotation
+    local raw = math.sin(t * 5.2)
+    local pulse = (raw * 0.5 + 0.5) ^ 1.8
+    local len = -11 - 20 * pulse
+    lines.Top.Size = UDim2.fromOffset(3, len)
+    lines.Bottom.Size = UDim2.fromOffset(3, len)
+    lines.Bottom.Position = UDim2.new(0.5, -1.5, 1, -len)
+    lines.Left.Size = UDim2.fromOffset(len, 3)
+    lines.Right.Size = UDim2.fromOffset(len, 3)
+    lines.Right.Position = UDim2.new(1, -len, 0.5, -1.5)
+    local beat = (math.sin(t * 2.7) * 0.5 + 0.5)
+    beat = beat * beat * (3 - 2 * beat)
+    local color = Color3.new(beat, 0, 0)
+    lines.Top.BackgroundColor3 = color
+    lines.Bottom.BackgroundColor3 = color
+    lines.Left.BackgroundColor3 = color
+    lines.Right.BackgroundColor3 = color
+    textLabel.TextColor3 = color
+end)
+_G.MysteryCrosshairConnection = connection
+]])
+end)
+
+print("✅ Mystery Crosshair ON")
