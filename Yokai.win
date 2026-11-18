@@ -65,7 +65,7 @@ lines.Right.Position = UDim2.new(1, 11, 0.5, -1.5)
 
 -- Text
 local textLabel = Instance.new("TextLabel")
-textLabel.Text = "Mystery"
+textLabel.Text = "Yokai.win"
 textLabel.Font = Enum.Font.Arcade
 textLabel.TextSize = 16
 textLabel.BackgroundTransparency = 1
