@@ -1,4 +1,4 @@
--- Angel Aura (Deep Blue, No Wing Size Pulse)
+-- Angel Aura (Deep Blue, Floor softer / more transparent)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -222,6 +222,31 @@ function AuraEngine.Load(tree, character)
 
     state.loaded = true
     state.currentName = tree.name
+
+    -- 1인칭일 때 숨기기
+    local lastFP = nil
+    local fpConn = RunService.RenderStepped:Connect(function()
+        if not state.loaded or not state.rig then return end
+
+        local cam = workspace.CurrentCamera
+        local head = state.rig:FindFirstChild("Head")
+        if not cam or not head then return end
+
+        local dist = (cam.CFrame.Position - head.Position).Magnitude
+        local isFP = dist < 1.8
+
+        if isFP == lastFP then return end
+        lastFP = isFP
+
+        for _, inst in pairs(state.instances) do
+            if inst and inst.Parent then
+                if inst:IsA("ParticleEmitter") or inst:IsA("Beam") then
+                    inst.Enabled = not isFP
+                end
+            end
+        end
+    end)
+    state.connections[#state.connections + 1] = fpConn
 
     local live = 0
     for _, inst in pairs(state.instances) do
@@ -854,10 +879,10 @@ Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenc
 Texture = "rbxassetid://7216855136",
 TimeScale = 1,
 Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.4, 0),
-    NumberSequenceKeypoint.new(0.2, 0.15, 0),
-    NumberSequenceKeypoint.new(0.7, 0.15, 0),
-    NumberSequenceKeypoint.new(1, 0.5, 0)
+    NumberSequenceKeypoint.new(0, 0.7, 0),
+    NumberSequenceKeypoint.new(0.2, 0.55, 0),
+    NumberSequenceKeypoint.new(0.7, 0.55, 0),
+    NumberSequenceKeypoint.new(1, 0.8, 0)
 }),
 VelocityInheritance = 0,
 VelocitySpread = 0.001,
@@ -894,10 +919,10 @@ Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenc
 Texture = "https://assetgame.roblox.com/asset/?id=12713358087&assetName=crescent",
 TimeScale = 1,
 Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.2, 0),
-    NumberSequenceKeypoint.new(0.3, 0.1, 0),
-    NumberSequenceKeypoint.new(0.8, 0.2, 0),
-    NumberSequenceKeypoint.new(1, 0.5, 0)
+    NumberSequenceKeypoint.new(0, 0.6, 0),
+    NumberSequenceKeypoint.new(0.3, 0.5, 0),
+    NumberSequenceKeypoint.new(0.8, 0.6, 0),
+    NumberSequenceKeypoint.new(1, 0.8, 0)
 }),
 VelocityInheritance = 0,
 VelocitySpread = 0.001,
@@ -934,10 +959,10 @@ Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenc
 Texture = "rbxassetid://7216849325",
 TimeScale = 1,
 Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.15, 0),
-    NumberSequenceKeypoint.new(0.3, 0.1, 0),
-    NumberSequenceKeypoint.new(0.75, 0.15, 0),
-    NumberSequenceKeypoint.new(1, 0.4, 0)
+    NumberSequenceKeypoint.new(0, 0.55, 0),
+    NumberSequenceKeypoint.new(0.3, 0.45, 0),
+    NumberSequenceKeypoint.new(0.75, 0.55, 0),
+    NumberSequenceKeypoint.new(1, 0.75, 0)
 }),
 VelocityInheritance = 0,
 VelocitySpread = 0.001,
@@ -989,7 +1014,7 @@ local function applyToCharacter(character)
     if not ok then
         warn("[angel] load error: " .. tostring(result))
     elseif result then
-        print("[angel] Deep Blue Angel Aura loaded")
+        print("[angel] Deep Blue Angel Aura loaded (floor softer)")
     else
         warn("[angel] AuraEngine.Load returned false; check rig/root diagnostics above")
     end
