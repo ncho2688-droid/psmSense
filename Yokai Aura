@@ -1,0 +1,1006 @@
+-- Angel Aura (Deep Blue, No Wing Size Pulse)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local AuraEngine = {}
+
+local state = {
+    loaded = false,
+    tree = nil,
+    instances = {},
+    baseValues = {},
+    roots = {},
+    rig = nil,
+    currentName = nil,
+    connections = {},
+}
+
+local BONE_MAP = {
+    Head = { "Head" },
+    UpperTorso = { "UpperTorso", "Torso" },
+    LowerTorso = { "LowerTorso" },
+    RightUpperArm = { "RightUpperArm", "Right Arm" },
+    RightLowerArm = { "RightLowerArm", "Right Arm" },
+    RightHand = { "RightHand", "Right Arm" },
+    LeftUpperArm = { "LeftUpperArm", "Left Arm" },
+    LeftLowerArm = { "LeftLowerArm", "Left Arm" },
+    LeftHand = { "LeftHand", "Left Arm" },
+    RightUpperLeg = { "RightUpperLeg", "Right Leg" },
+    RightLowerLeg = { "RightLowerLeg", "Right Leg" },
+    LeftUpperLeg = { "LeftUpperLeg", "Left Leg" },
+    LeftLowerLeg = { "LeftLowerLeg", "Left Leg" },
+    HumanoidRootPart = { "HumanoidRootPart" },
+    Torso = { "Torso", "UpperTorso" },
+}
+
+local function newInstance(className)
+    local ok, inst = pcall(function() return Instance.new(className) end)
+    if not ok or not inst then return nil end
+    return inst
+end
+
+local function resolveEnum(value, enumType)
+    if type(value) ~= "string" then return value end
+    local short = value:match("^Enum%.[^.]+%.(.+)$")
+    if not short then return value end
+    local enum = enumType
+    if not enum then
+        enum = Enum
+        for part in value:gmatch("Enum%.([^.]+)") do
+            enum = enum[part]
+            if not enum then break end
+        end
+    end
+    if type(enum) == "table" then
+        local v = enum[short]
+        if v ~= nil then return v end
+    end
+    return value
+end
+
+local function applyProp(inst, key, value)
+    local enumType
+    if key == "Material" then
+        enumType = Enum.Material
+    elseif key == "Shape" and inst:IsA("BasePart") then
+        enumType = Enum.PartType
+    elseif key == "Shape" and inst:IsA("ParticleEmitter") then
+        enumType = Enum.ParticleEmitterShape
+    elseif key == "ShapeInOut" then
+        enumType = Enum.ParticleEmitterShapeInOut
+    elseif key == "ShapeStyle" then
+        enumType = Enum.ParticleEmitterShapeStyle
+    elseif key == "EmissionDirection" then
+        enumType = Enum.NormalId
+    elseif key == "Orientation" then
+        enumType = Enum.ParticleOrientation
+    elseif key == "FlipbookLayout" then
+        enumType = Enum.ParticleFlipbookLayout
+    elseif key == "FlipbookMode" then
+        enumType = Enum.ParticleFlipbookMode
+    elseif key == "TextureMode" then
+        enumType = Enum.TextureMode
+    end
+
+    local resolved = resolveEnum(value, enumType)
+    local ok = pcall(function() inst[key] = resolved end)
+    return ok
+end
+
+local function resolveBone(node)
+    local candidates = BONE_MAP[node.name]
+    if not candidates then return nil end
+    for _, name in ipairs(candidates) do
+        local found = state.rig:FindFirstChild(name)
+        if found and found:IsA("BasePart") then return found end
+    end
+    return nil
+end
+
+local function weldToBone(part, bone)
+    if not (part and bone) then return false end
+    if not part.Parent then
+        part.Parent = bone
+    end
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = part
+    weld.Part1 = bone
+    weld.Parent = part
+    return true
+end
+
+function AuraEngine.Load(tree, character)
+    AuraEngine.Unload()
+
+    if type(tree) ~= "table" then
+        warn("[aura] invalid tree")
+        return false
+    end
+
+    state.tree = tree
+    state.rig = character or (Players.LocalPlayer and Players.LocalPlayer.Character)
+    if not state.rig then
+        warn("[aura] no character available")
+        return false
+    end
+
+    local nodes = tree.nodes or {}
+    local byId = {}
+    for _, node in ipairs(nodes) do
+        byId[node.id] = node
+    end
+
+    for _, node in ipairs(nodes) do
+        local inst = newInstance(node.class)
+        if not inst then
+            warn("[aura] could not create " .. node.class .. " id=" .. tostring(node.id))
+            continue
+        end
+
+        local props = node.props or {}
+        local base = {}
+        for key, value in pairs(props) do
+            if key ~= "CFrame" then
+                applyProp(inst, key, value)
+                if type(value) == "number" then
+                    base[key] = value
+                elseif type(value) == "table" and value.Min and value.Max then
+                    base[key] = { Min = value.Min, Max = value.Max }
+                end
+            end
+        end
+
+        state.instances[node.id] = inst
+        state.baseValues[inst] = base
+    end
+
+    for _, node in ipairs(nodes) do
+        local inst = state.instances[node.id]
+        if not inst then continue end
+
+        if node.parent == 0 then
+            local bone = resolveBone(node)
+            if bone then
+                inst.Name = "AuraRoot_" .. node.name
+                inst.CanCollide = false
+                inst.CanTouch = false
+                inst.CanQuery = false
+                inst.Massless = true
+                inst.CastShadow = false
+                inst.Transparency = 1
+                inst.CFrame = bone.CFrame
+                inst.Parent = bone
+                weldToBone(inst, bone)
+                state.roots[node.id] = inst
+            end
+        else
+            local parentNode = byId[node.parent]
+            local parentInst = state.instances[node.parent]
+
+            if inst:IsA("Attachment") and parentNode and parentNode.class == "Attachment" then
+                local topNode = parentNode
+                while topNode do
+                    local up = byId[topNode.parent]
+                    if not up or up.class ~= "Attachment" then break end
+                    topNode = up
+                end
+                local partNode = topNode and byId[topNode.parent]
+                if partNode and partNode.class ~= "Attachment" then
+                    parentInst = state.instances[partNode.id]
+                    state.lifted = (state.lifted or 0) + 1
+                end
+            end
+
+            if parentInst then
+                inst.Parent = parentInst
+            end
+        end
+    end
+
+    for _, link in ipairs(tree.links or {}) do
+        local beam = state.instances[link[1]]
+        local a0 = state.instances[link[2]]
+        local a1 = state.instances[link[3]]
+        if beam and a0 and a1 then
+            local ok = pcall(function()
+                beam.Attachment0 = a0
+                beam.Attachment1 = a1
+            end)
+            if not ok then warn("[aura] link failed: " .. tostring(link[1])) end
+        end
+    end
+
+    for _, node in ipairs(nodes) do
+        local inst = state.instances[node.id]
+        if inst and inst:IsA("Attachment") then
+            local props = node.props or {}
+            if props.CFrame then
+                pcall(function() inst.CFrame = props.CFrame end)
+            end
+        end
+    end
+
+    state.loaded = true
+    state.currentName = tree.name
+
+    local live = 0
+    for _, inst in pairs(state.instances) do
+        if inst and inst.Parent then live = live + 1 end
+    end
+    local rootCount = 0
+    for _ in pairs(state.roots) do rootCount = rootCount + 1 end
+
+    print(("[aura] loaded: %s | nodes=%d | live=%d | roots=%d | lifted=%d"):format(
+        tostring(tree.name), #nodes, live, rootCount, state.lifted or 0))
+
+    if rootCount == 0 then
+        warn("[aura] no root could be attached to a bone (check the character rig)")
+    end
+
+    return true
+end
+
+function AuraEngine.Unload()
+    for _, inst in pairs(state.instances) do
+        if inst and inst.Parent then pcall(function() inst:Destroy() end) end
+    end
+    for _, anchor in pairs(state.roots) do
+        if anchor and anchor.Parent then pcall(function() anchor:Destroy() end) end
+    end
+    for _, c in pairs(state.connections) do
+        pcall(function() c:Disconnect() end)
+    end
+
+    state.instances = {}
+    state.baseValues = {}
+    state.roots = {}
+    state.connections = {}
+    state.tree = nil
+    state.loaded = false
+    state.currentName = nil
+end
+
+function AuraEngine.IsLoaded() return state.loaded end
+function AuraEngine.Current() return state.currentName end
+
+function AuraEngine.GetInstances()
+    local out = {}
+    for _, inst in pairs(state.instances) do
+        if inst and inst.Parent then out[#out + 1] = inst end
+    end
+    return out
+end
+
+function AuraEngine.GetBase(inst, prop)
+    if not inst then return nil end
+    local entry = state.baseValues[inst]
+    if entry and entry[prop] ~= nil then return entry[prop] end
+    local current = inst[prop]
+    if type(current) == "table" and current.Min and current.Max then
+        return { Min = current.Min, Max = current.Max }
+    end
+    if type(current) == "number" then return current end
+    return nil
+end
+
+function AuraEngine.ScaleProp(inst, prop, factor)
+    if not inst then return end
+    local base = state.baseValues[inst]
+    local original = base and base[prop]
+    if original == nil then return end
+    pcall(function() inst[prop] = original * factor end)
+end
+
+function AuraEngine.AutoLoad(tree)
+    local function onChar(char)
+        if not char then return end
+        char:WaitForChild("HumanoidRootPart", 10)
+        task.wait(0.3)
+        AuraEngine.Load(tree, char)
+    end
+
+    local player = Players.LocalPlayer
+    if not player then return end
+    if player.Character then onChar(player.Character) end
+
+    local conn = player.CharacterAdded:Connect(onChar)
+    state.connections[#state.connections + 1] = conn
+end
+
+-- ========== DEEP BLUE ==========
+local BLUE = Color3.fromRGB(40, 120, 255)
+
+local TREE = {
+name = "angel",
+nodes = {
+{ id = 1, parent = 0, class = "Part", name = "Head", props = {
+Size = Vector3.new(2, 1, 1),
+Color = Color3.fromRGB(127, 127, 127),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = true,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(158.375, -210.449, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+{ id = 2, parent = 1, class = "Attachment", name = "Halo", props = {
+CFrame = CFrame.new(-0.25, 0.933013, 0.25882, 0.965932, -0.249973, 0.0670034, 0.258797, 0.933026, -0.249973, -2.93739e-05, 0.258797, 0.965932),
+Visible = false,
+} },
+{ id = 3, parent = 2, class = "ParticleEmitter", name = "Ring2", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 2,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Top,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(1, 1),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 7,
+RotSpeed = NumberRange.new(-400, 400),
+Rotation = NumberRange.new(0, 360),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2, 0), NumberSequenceKeypoint.new(1, 3, 0) }),
+SpreadAngle = Vector2.new(5, 5),
+Speed = NumberRange.new(0.001, 0.001),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0) }),
+Texture = "rbxassetid://8819682608",
+TimeScale = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.2, 0, 0), NumberSequenceKeypoint.new(0.8, 0, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+VelocityInheritance = 0,
+VelocitySpread = 5,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 4, parent = 2, class = "ParticleEmitter", name = "Ring1", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 2,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Top,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(1, 1),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 7,
+RotSpeed = NumberRange.new(-400, 400),
+Rotation = NumberRange.new(0, 360),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 2.5, 0), NumberSequenceKeypoint.new(1, 3, 0) }),
+SpreadAngle = Vector2.new(5, 5),
+Speed = NumberRange.new(0.001, 0.001),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0) }),
+Texture = "rbxassetid://8819682608",
+TimeScale = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.2, 0, 0), NumberSequenceKeypoint.new(0.8, 0, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+VelocityInheritance = 0,
+VelocitySpread = 5,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 5, parent = 0, class = "Part", name = "RightUpperArm", props = {
+Size = Vector3.new(1, 2, 1),
+Color = Color3.fromRGB(127, 127, 127),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = false,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(156.875, -211.949, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+{ id = 6, parent = 5, class = "Attachment", name = "Beam1", props = {
+CFrame = CFrame.new(0.5, -1, 0, 1, 0, -0, 0, 0, 1, 0, -1, 0),
+Visible = false,
+} },
+{ id = 7, parent = 6, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 8, parent = 6, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 9, parent = 5, class = "Attachment", name = "Beam3", props = {
+CFrame = CFrame.new(0, -1, -0.5, 0, -1, 0, 0, 0, 1, -1, 0, 0),
+Visible = false,
+} },
+{ id = 10, parent = 9, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 11, parent = 9, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 12, parent = 5, class = "Attachment", name = "Beam2", props = {
+CFrame = CFrame.new(-0.5, -1, 0, -1, 0, 0, 0, 0, 1, 0, 1, -0),
+Visible = false,
+} },
+{ id = 13, parent = 12, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 14, parent = 12, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 15, parent = 5, class = "Attachment", name = "Beam4", props = {
+CFrame = CFrame.new(0, -1, 0.5, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+Visible = false,
+} },
+{ id = 16, parent = 15, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 17, parent = 15, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 18, parent = 0, class = "Part", name = "UpperTorso", props = {
+Size = Vector3.new(2, 2, 1),
+Color = Color3.fromRGB(127, 127, 127),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = true,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(158.375, -211.949, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+{ id = 19, parent = 18, class = "Attachment", name = "Center", props = {
+CFrame = CFrame.new(0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 20, parent = 19, class = "ParticleEmitter", name = "Ambient", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 2,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Top,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.Grid4x4,
+FlipbookMode = Enum.ParticleFlipbookMode.OneShot,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(2, 2),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.FacingCamera,
+Rate = 5,
+RotSpeed = NumberRange.new(0, 0),
+Rotation = NumberRange.new(0, 360),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3, 0), NumberSequenceKeypoint.new(1, 4, 0) }),
+SpreadAngle = Vector2.new(180, 180),
+Speed = NumberRange.new(0.5, 0.5),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0) }),
+Texture = "rbxassetid://11402221943",
+TimeScale = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.3, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+VelocityInheritance = 0,
+VelocitySpread = 180,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 21, parent = 18, class = "Attachment", name = "LeftWing", props = {
+CFrame = CFrame.new(-2, 0.5, 1, 0.96593, 0, 0.258805, 0, 1, -0, -0.258805, 0, 0.96593),
+Visible = false,
+} },
+{ id = 22, parent = 21, class = "ParticleEmitter", name = "Wing", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 1,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Back,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(2.5, 2.5),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 12,
+RotSpeed = NumberRange.new(0, 0),
+Rotation = NumberRange.new(-15, -15),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3.1, 0), NumberSequenceKeypoint.new(1, 3.1, 0) }),
+SpreadAngle = Vector2.new(0, 0),
+Speed = NumberRange.new(0.05, 0.05),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0) }),
+Texture = "http://www.roblox.com/asset/?id=13267054240",
+TimeScale = 1,
+Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.15, 0),
+    NumberSequenceKeypoint.new(0.15, 0, 0),
+    NumberSequenceKeypoint.new(0.85, 0, 0),
+    NumberSequenceKeypoint.new(1, 0.2, 0)
+}),
+VelocityInheritance = 0,
+VelocitySpread = 0,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 23, parent = 18, class = "Attachment", name = "RightWing", props = {
+CFrame = CFrame.new(2, 0.5, 1, 0.96593, 0, -0.258805, 0, 1, 0, 0.258805, 0, 0.96593),
+Visible = false,
+} },
+{ id = 24, parent = 23, class = "ParticleEmitter", name = "Wing", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 1,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Front,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(2.5, 2.5),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 12,
+RotSpeed = NumberRange.new(0, 0),
+Rotation = NumberRange.new(-15, -15),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3.1, 0), NumberSequenceKeypoint.new(1, 3.1, 0) }),
+SpreadAngle = Vector2.new(0, 0),
+Speed = NumberRange.new(0.05, 0.05),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0) }),
+Texture = "http://www.roblox.com/asset/?id=13267054240",
+TimeScale = 1,
+Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.15, 0),
+    NumberSequenceKeypoint.new(0.15, 0, 0),
+    NumberSequenceKeypoint.new(0.85, 0, 0),
+    NumberSequenceKeypoint.new(1, 0.2, 0)
+}),
+VelocityInheritance = 0,
+VelocitySpread = 0,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 25, parent = 0, class = "Part", name = "LeftUpperArm", props = {
+Size = Vector3.new(1, 2, 1),
+Color = Color3.fromRGB(127, 127, 127),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = false,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(159.875, -211.949, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+{ id = 26, parent = 25, class = "Attachment", name = "Beam3", props = {
+CFrame = CFrame.new(0, -1, -0.5, 0, -1, 0, 0, 0, 1, -1, 0, 0),
+Visible = false,
+} },
+{ id = 27, parent = 26, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 28, parent = 26, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 29, parent = 25, class = "Attachment", name = "Beam4", props = {
+CFrame = CFrame.new(0, -1, 0.5, 0, 1, 0, 0, 0, 1, 1, 0, 0),
+Visible = false,
+} },
+{ id = 30, parent = 29, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 31, parent = 29, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 32, parent = 25, class = "Attachment", name = "Beam2", props = {
+CFrame = CFrame.new(-0.5, -1, 0, -1, 0, 0, 0, 0, 1, 0, 1, -0),
+Visible = false,
+} },
+{ id = 33, parent = 32, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 34, parent = 32, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 35, parent = 25, class = "Attachment", name = "Beam1", props = {
+CFrame = CFrame.new(0.5, -1, 0, 1, 0, -0, 0, 0, 1, 0, -1, 0),
+Visible = false,
+} },
+{ id = 36, parent = 35, class = "Beam", name = "Beam", props = {
+Brightness = 10,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+CurveSize0 = 0,
+CurveSize1 = 0,
+Enabled = true,
+FaceCamera = false,
+LightEmission = 1,
+LightInfluence = 0,
+Segments = 10,
+Texture = "http://www.roblox.com/asset/?id=5059527230",
+TextureLength = 0.1,
+TextureMode = Enum.TextureMode.Stretch,
+TextureSpeed = 1,
+Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1, 0), NumberSequenceKeypoint.new(0.5, 0.9, 0), NumberSequenceKeypoint.new(1, 1, 0) }),
+Width0 = 2,
+Width1 = 2,
+ZOffset = 0.1,
+} },
+{ id = 37, parent = 35, class = "Attachment", name = "Attachment", props = {
+CFrame = CFrame.new(0, 0, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 38, parent = 0, class = "Part", name = "RightUpperLeg", props = {
+Size = Vector3.new(1, 2, 1),
+Color = Color3.fromRGB(127, 127, 127),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = false,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(157.875, -213.949, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+{ id = 39, parent = 0, class = "Part", name = "HumanoidRootPart", props = {
+Size = Vector3.new(2, 2, 1),
+Color = Color3.fromRGB(163, 162, 165),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = false,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(158.375, -211.949, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+{ id = 40, parent = 39, class = "Attachment", name = "Floor", props = {
+CFrame = CFrame.new(0, -2.75, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+Visible = false,
+} },
+{ id = 41, parent = 40, class = "ParticleEmitter", name = "Ambient1", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 2,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Top,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(3, 3),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 35,
+RotSpeed = NumberRange.new(-40, 40),
+Rotation = NumberRange.new(0, 360),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 2, 0), NumberSequenceKeypoint.new(0.6, 5, 0), NumberSequenceKeypoint.new(0.8, 8, 0), NumberSequenceKeypoint.new(1, 12, 0) }),
+SpreadAngle = Vector2.new(0.001, 0.001),
+Speed = NumberRange.new(0.001, 0.001),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0.2) }),
+Texture = "rbxassetid://7216855136",
+TimeScale = 1,
+Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.4, 0),
+    NumberSequenceKeypoint.new(0.2, 0.15, 0),
+    NumberSequenceKeypoint.new(0.7, 0.15, 0),
+    NumberSequenceKeypoint.new(1, 0.5, 0)
+}),
+VelocityInheritance = 0,
+VelocitySpread = 0.001,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 42, parent = 40, class = "ParticleEmitter", name = "Ambient2", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 2,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Top,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(3, 3),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 35,
+RotSpeed = NumberRange.new(-600, 600),
+Rotation = NumberRange.new(0, 360),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 1, 0), NumberSequenceKeypoint.new(0.6, 2.5, 0), NumberSequenceKeypoint.new(0.8, 4, 0), NumberSequenceKeypoint.new(1, 6, 0) }),
+SpreadAngle = Vector2.new(0.001, 0.001),
+Speed = NumberRange.new(0.001, 0.001),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0.2) }),
+Texture = "https://assetgame.roblox.com/asset/?id=12713358087&assetName=crescent",
+TimeScale = 1,
+Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.2, 0),
+    NumberSequenceKeypoint.new(0.3, 0.1, 0),
+    NumberSequenceKeypoint.new(0.8, 0.2, 0),
+    NumberSequenceKeypoint.new(1, 0.5, 0)
+}),
+VelocityInheritance = 0,
+VelocitySpread = 0.001,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 43, parent = 40, class = "ParticleEmitter", name = "Stars", props = {
+Acceleration = Vector3.new(0, 0, 0),
+Brightness = 2,
+Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
+Drag = 0,
+EmissionDirection = Enum.NormalId.Top,
+Enabled = true,
+FlipbookFramerate = NumberRange.new(1, 1),
+FlipbookLayout = Enum.ParticleFlipbookLayout.None,
+FlipbookMode = Enum.ParticleFlipbookMode.Loop,
+FlipbookStartRandom = false,
+Lifetime = NumberRange.new(3, 3),
+LightEmission = 1,
+LightInfluence = 0,
+LockedToPart = true,
+Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
+Rate = 35,
+RotSpeed = NumberRange.new(-30, 30),
+Rotation = NumberRange.new(0, 360),
+Shape = Enum.ParticleEmitterShape.Box,
+ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
+ShapePartial = 1,
+ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 1, 0), NumberSequenceKeypoint.new(0.6, 2.5, 0), NumberSequenceKeypoint.new(0.8, 4, 0), NumberSequenceKeypoint.new(1, 6, 0) }),
+SpreadAngle = Vector2.new(0.001, 0.001),
+Speed = NumberRange.new(0.001, 0.001),
+Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 2, 0) }),
+Texture = "rbxassetid://7216849325",
+TimeScale = 1,
+Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.15, 0),
+    NumberSequenceKeypoint.new(0.3, 0.1, 0),
+    NumberSequenceKeypoint.new(0.75, 0.15, 0),
+    NumberSequenceKeypoint.new(1, 0.4, 0)
+}),
+VelocityInheritance = 0,
+VelocitySpread = 0.001,
+WindAffectsDrag = false,
+ZOffset = 0,
+} },
+{ id = 44, parent = 0, class = "Part", name = "LeftUpperLeg", props = {
+Size = Vector3.new(1, 2, 1),
+Color = Color3.fromRGB(127, 127, 127),
+Material = Enum.Material.Plastic,
+Transparency = 1,
+Reflectance = 0,
+CastShadow = true,
+Shape = Enum.PartType.Block,
+Anchored = false,
+CanCollide = false,
+CanQuery = true,
+CanTouch = true,
+Massless = false,
+CFrame = CFrame.new(158.875, -213.949, 49.5779, -1, 0, 0, 0, 1, 0, 0, 0, -1),
+} },
+},
+links = {
+{ 7, 6, 8 },
+{ 10, 9, 11 },
+{ 13, 12, 14 },
+{ 17, 15, 16 },
+{ 28, 26, 27 },
+{ 30, 29, 31 },
+{ 34, 32, 33 },
+{ 36, 35, 37 },
+},
+}
+
+-- Load
+local player = Players.LocalPlayer
+if not player then
+    warn("[angel] LocalPlayer unavailable; run this from a client context")
+    return
+end
+
+local function applyToCharacter(character)
+    if not character then return end
+    character:WaitForChild("HumanoidRootPart", 10)
+    task.wait(0.25)
+    local ok, result = pcall(function()
+        return AuraEngine.Load(TREE, character)
+    end)
+    if not ok then
+        warn("[angel] load error: " .. tostring(result))
+    elseif result then
+        print("[angel] Deep Blue Angel Aura loaded")
+    else
+        warn("[angel] AuraEngine.Load returned false; check rig/root diagnostics above")
+    end
+end
+
+if player.Character then
+    applyToCharacter(player.Character)
+else
+    applyToCharacter(player.CharacterAdded:Wait())
+end
+
+player.CharacterAdded:Connect(function(character)
+    applyToCharacter(character)
+end)
