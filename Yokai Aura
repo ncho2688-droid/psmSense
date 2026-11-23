@@ -1,4 +1,4 @@
--- Angel Aura (Deep Blue, Floor softer / more transparent)
+-- Angel Aura (Deep Blue, wings more transparent + a bit more light)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
@@ -220,10 +220,22 @@ function AuraEngine.Load(tree, character)
         end
     end
 
+    -- 날개 쪽 빛 (조금 더 올림)
+    local torsoRoot = state.roots[18]
+    if torsoRoot then
+        local light = Instance.new("PointLight")
+        light.Name = "WingSoftLight"
+        light.Color = Color3.fromRGB(60, 140, 255)
+        light.Brightness = 0.7
+        light.Range = 10
+        light.Shadows = false
+        light.Parent = torsoRoot
+        state.instances["wing_light"] = light
+    end
+
     state.loaded = true
     state.currentName = tree.name
 
-    -- 1인칭일 때 숨기기
     local lastFP = nil
     local fpConn = RunService.RenderStepped:Connect(function()
         if not state.loaded or not state.rig then return end
@@ -241,6 +253,8 @@ function AuraEngine.Load(tree, character)
         for _, inst in pairs(state.instances) do
             if inst and inst.Parent then
                 if inst:IsA("ParticleEmitter") or inst:IsA("Beam") then
+                    inst.Enabled = not isFP
+                elseif inst:IsA("PointLight") then
                     inst.Enabled = not isFP
                 end
             end
@@ -610,7 +624,7 @@ Visible = false,
 } },
 { id = 22, parent = 21, class = "ParticleEmitter", name = "Wing", props = {
 Acceleration = Vector3.new(0, 0, 0),
-Brightness = 1,
+Brightness = 0.45,
 Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
 Drag = 0,
 EmissionDirection = Enum.NormalId.Back,
@@ -620,11 +634,11 @@ FlipbookLayout = Enum.ParticleFlipbookLayout.None,
 FlipbookMode = Enum.ParticleFlipbookMode.Loop,
 FlipbookStartRandom = false,
 Lifetime = NumberRange.new(2.5, 2.5),
-LightEmission = 1,
+LightEmission = 0.75,
 LightInfluence = 0,
 LockedToPart = true,
 Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
-Rate = 12,
+Rate = 9,
 RotSpeed = NumberRange.new(0, 0),
 Rotation = NumberRange.new(-15, -15),
 Shape = Enum.ParticleEmitterShape.Box,
@@ -638,10 +652,10 @@ Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenc
 Texture = "http://www.roblox.com/asset/?id=13267054240",
 TimeScale = 1,
 Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.15, 0),
-    NumberSequenceKeypoint.new(0.15, 0, 0),
-    NumberSequenceKeypoint.new(0.85, 0, 0),
-    NumberSequenceKeypoint.new(1, 0.2, 0)
+    NumberSequenceKeypoint.new(0, 0.7, 0),
+    NumberSequenceKeypoint.new(0.15, 0.55, 0),
+    NumberSequenceKeypoint.new(0.85, 0.55, 0),
+    NumberSequenceKeypoint.new(1, 0.75, 0)
 }),
 VelocityInheritance = 0,
 VelocitySpread = 0,
@@ -654,7 +668,7 @@ Visible = false,
 } },
 { id = 24, parent = 23, class = "ParticleEmitter", name = "Wing", props = {
 Acceleration = Vector3.new(0, 0, 0),
-Brightness = 1,
+Brightness = 0.45,
 Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, BLUE), ColorSequenceKeypoint.new(1, BLUE) }),
 Drag = 0,
 EmissionDirection = Enum.NormalId.Front,
@@ -664,11 +678,11 @@ FlipbookLayout = Enum.ParticleFlipbookLayout.None,
 FlipbookMode = Enum.ParticleFlipbookMode.Loop,
 FlipbookStartRandom = false,
 Lifetime = NumberRange.new(2.5, 2.5),
-LightEmission = 1,
+LightEmission = 0.75,
 LightInfluence = 0,
 LockedToPart = true,
 Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
-Rate = 12,
+Rate = 9,
 RotSpeed = NumberRange.new(0, 0),
 Rotation = NumberRange.new(-15, -15),
 Shape = Enum.ParticleEmitterShape.Box,
@@ -682,10 +696,10 @@ Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenc
 Texture = "http://www.roblox.com/asset/?id=13267054240",
 TimeScale = 1,
 Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.15, 0),
-    NumberSequenceKeypoint.new(0.15, 0, 0),
-    NumberSequenceKeypoint.new(0.85, 0, 0),
-    NumberSequenceKeypoint.new(1, 0.2, 0)
+    NumberSequenceKeypoint.new(0, 0.7, 0),
+    NumberSequenceKeypoint.new(0.15, 0.55, 0),
+    NumberSequenceKeypoint.new(0.85, 0.55, 0),
+    NumberSequenceKeypoint.new(1, 0.75, 0)
 }),
 VelocityInheritance = 0,
 VelocitySpread = 0,
@@ -860,19 +874,19 @@ FlipbookFramerate = NumberRange.new(1, 1),
 FlipbookLayout = Enum.ParticleFlipbookLayout.None,
 FlipbookMode = Enum.ParticleFlipbookMode.Loop,
 FlipbookStartRandom = false,
-Lifetime = NumberRange.new(3, 3),
+Lifetime = NumberRange.new(2.8, 2.8),
 LightEmission = 1,
 LightInfluence = 0,
 LockedToPart = true,
 Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
-Rate = 35,
+Rate = 24,
 RotSpeed = NumberRange.new(-40, 40),
 Rotation = NumberRange.new(0, 360),
 Shape = Enum.ParticleEmitterShape.Box,
 ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
 ShapePartial = 1,
 ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
-Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 2, 0), NumberSequenceKeypoint.new(0.6, 5, 0), NumberSequenceKeypoint.new(0.8, 8, 0), NumberSequenceKeypoint.new(1, 12, 0) }),
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 1.6, 0), NumberSequenceKeypoint.new(0.6, 3.5, 0), NumberSequenceKeypoint.new(0.8, 5.5, 0), NumberSequenceKeypoint.new(1, 7.5, 0) }),
 SpreadAngle = Vector2.new(0.001, 0.001),
 Speed = NumberRange.new(0.001, 0.001),
 Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0.2) }),
@@ -900,19 +914,19 @@ FlipbookFramerate = NumberRange.new(1, 1),
 FlipbookLayout = Enum.ParticleFlipbookLayout.None,
 FlipbookMode = Enum.ParticleFlipbookMode.Loop,
 FlipbookStartRandom = false,
-Lifetime = NumberRange.new(3, 3),
+Lifetime = NumberRange.new(2.8, 2.8),
 LightEmission = 1,
 LightInfluence = 0,
 LockedToPart = true,
 Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
-Rate = 35,
+Rate = 24,
 RotSpeed = NumberRange.new(-600, 600),
 Rotation = NumberRange.new(0, 360),
 Shape = Enum.ParticleEmitterShape.Box,
 ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
 ShapePartial = 1,
 ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
-Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 1, 0), NumberSequenceKeypoint.new(0.6, 2.5, 0), NumberSequenceKeypoint.new(0.8, 4, 0), NumberSequenceKeypoint.new(1, 6, 0) }),
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 0.8, 0), NumberSequenceKeypoint.new(0.6, 1.9, 0), NumberSequenceKeypoint.new(0.8, 3.0, 0), NumberSequenceKeypoint.new(1, 4.2, 0) }),
 SpreadAngle = Vector2.new(0.001, 0.001),
 Speed = NumberRange.new(0.001, 0.001),
 Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 0, 0.2) }),
@@ -940,19 +954,19 @@ FlipbookFramerate = NumberRange.new(1, 1),
 FlipbookLayout = Enum.ParticleFlipbookLayout.None,
 FlipbookMode = Enum.ParticleFlipbookMode.Loop,
 FlipbookStartRandom = false,
-Lifetime = NumberRange.new(3, 3),
+Lifetime = NumberRange.new(2.8, 2.8),
 LightEmission = 1,
 LightInfluence = 0,
 LockedToPart = true,
 Orientation = Enum.ParticleOrientation.VelocityPerpendicular,
-Rate = 35,
+Rate = 24,
 RotSpeed = NumberRange.new(-30, 30),
 Rotation = NumberRange.new(0, 360),
 Shape = Enum.ParticleEmitterShape.Box,
 ShapeInOut = Enum.ParticleEmitterShapeInOut.Outward,
 ShapePartial = 1,
 ShapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
-Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 1, 0), NumberSequenceKeypoint.new(0.6, 2.5, 0), NumberSequenceKeypoint.new(0.8, 4, 0), NumberSequenceKeypoint.new(1, 6, 0) }),
+Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(0.3, 0.8, 0), NumberSequenceKeypoint.new(0.6, 1.9, 0), NumberSequenceKeypoint.new(0.8, 3.0, 0), NumberSequenceKeypoint.new(1, 4.2, 0) }),
 SpreadAngle = Vector2.new(0.001, 0.001),
 Speed = NumberRange.new(0.001, 0.001),
 Squash = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0, 0), NumberSequenceKeypoint.new(1, 2, 0) }),
@@ -1014,7 +1028,7 @@ local function applyToCharacter(character)
     if not ok then
         warn("[angel] load error: " .. tostring(result))
     elseif result then
-        print("[angel] Deep Blue Angel Aura loaded (floor softer)")
+        print("[angel] Deep Blue Angel Aura loaded (wings more transparent + more light)")
     else
         warn("[angel] AuraEngine.Load returned false; check rig/root diagnostics above")
     end
